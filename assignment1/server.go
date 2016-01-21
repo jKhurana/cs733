@@ -296,7 +296,7 @@ func casFile(commandArray []string,buf []byte,bufCurrPos *int,numberofbytes *int
 
 	if f.version != newVersion {
 		FileStructureLock.Unlock()
-		conn.Write([]byte("ERR_VERSION\r\n"))
+		conn.Write([]byte("ERR_VERSION "+ strconv.FormatInt(f.version,10) +"\r\n"))
 		return
 	}
 
@@ -343,6 +343,18 @@ func isFileExpired(isExpiry bool,t time.Time,expiry int64) (bool,int64) {
 	} else {
 		return false,expiry - elapsedDuration
 	}
+}
+
+func clearBuffer() {
+	FileStructureLock.Lock()
+
+	for key,value := range FileInfoMap {
+		isExpired,_ := isFileExpired(value.isExpiry,value.updateTime,value.expiry)
+		if isExpired {
+			delete(FileInfoMap, key)
+		}
+	}
+	FileStructureLock.Unlock()
 }
 
 // This method handles the error and terminate the server process
