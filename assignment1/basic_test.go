@@ -217,14 +217,28 @@ func TestExpireTime(t *testing.T) {
         VerifyFileNotFound(t,scanner.Text())
 }
 
-//--------------------------------------- Start of Concurrency Testcases----------------------------------------------------------
-/*
-// generatl method for performaing cas operation
-func PerformCas(version int64,name string,conn net.Conn) {
-	
-	contents = "hello " + strconv.PraseInt(version,10)
-	fmt.Fprintf(conn[i], "cas %v %v %v %v\r\n%v\r\n",name,version,len(contents),contents)
+// Test read , write , cas and delete with multiple clients
+func TestMultipleClient(t *testing.T) {
 
+}
+
+//--------------------------------------- Start of Concurrency Testcases----------------------------------------------------------
+
+// generatl method for performaing cas operation
+func PerformCas(version int64,name string,conn net.Conn,dataChannel chan int) {
+	
+	contents := "hello"
+	fmt.Fprintf(conn, "cas %v %v %v\r\n%v\r\n",name,version,len(contents),contents)
+	scanner := bufio.NewScanner(conn)
+
+	scanner.Scan()
+	output := scanner.Text()
+	arr := strings.Split(output," ")
+	if arr[0] == "ERR_VERSION" {
+			dataChannel <- 0
+	} else {
+			dataChannel <- 1
+	}
 }
 
 func TestCas(t *testing.T) {
@@ -235,28 +249,28 @@ func TestCas(t *testing.T) {
 	name := "hi.txt"
     contents := "hello 1"
     scanner := bufio.NewScanner(conn[0])
-	_,err := fmt.Fprintf(conn[0], "write %v %v %v\r\n%v\r\n", name, len(contents) ,contents)
+	_,err := fmt.Fprintf(conn[0], "write %v %v\r\n%v\r\n", name, len(contents) ,contents)
+	if err !=nil {
+		t.Error(err.Error())
+	}
 	scanner.Scan()
 	version := VerifyWriteSucess(t,scanner.Text())
 
 	for i:=0;i<10;i++ {
 		contents = "hello " + strconv.Itoa(i+2);
-		fmt.Fprintf(conn[i], "cas %v %v %v %v\r\n%v\r\n",name,version,len(contents),exptime,contents)
-		version = VerifyCasSucess()
+		go PerformCas(version,name,conn[i],dataChannel)
 	}
 	// verify with read
-	fmt.Fprintf(conn[0], "read %v\r\n", name)
-	scanner.Scan()
-    output := scanner.Text()
-    scanner.Scan()     
-    VerifyReadSucess(t,output,version,"hello 11",scanner.Text())
+	var b int = 0
+    for i := 0; i < 10; i++ {
+        b = b +  <-dataChannel
+    }
+    if b!=1 {
+    	t.Error(fmt.Sprintf("More than one client has chabged version %v of file %v",version,name)) // t.Error is visible when running `go test -verbose`
+    }
 }
 
-func TestMultipleClient(t *testing.T) {
 
-}
-
-*/
 
 // Useful testing function
 func expect(t *testing.T, a string, b string) {

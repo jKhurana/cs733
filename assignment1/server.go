@@ -22,8 +22,9 @@ type FileInfo struct {
 	content []byte
 }
 
-// Map for keeping the information for each file
+// RWMutex for the map Locking
 var FileStructureLock sync.RWMutex
+// Map for keeping the information for each file
 var FileInfoMap map[string]*FileInfo
 
  // Server listen on port 8080 and call handleClient() method for each connected client
@@ -50,6 +51,8 @@ func main() {
 }
 
 func handleClient(conn net.Conn) {
+	
+	// constant declaration
 	const BUFFER_SIZE = 1024 // default buffer size
 	const MAX_COMMAND_LENGTH = 400
 	const MIN_COMMAND_LENGTH = 5
@@ -69,7 +72,6 @@ func handleClient(conn net.Conn) {
 
 	for {
 		currByte := readByte(conn,buf,&numberofbytes,&bufCurrPos)
-		//fmt.Printf("%c",currByte)
 		if preByte == '\r' && currByte == '\n' {
 			if commandLen < MIN_COMMAND_LENGTH || commandLen > MAX_COMMAND_LENGTH {
 				conn.Write([]byte("ERR_CMD_ERR\r\n"))
@@ -83,16 +85,12 @@ func handleClient(conn net.Conn) {
 
 			switch {
 					case commandType==1:
-						//fmt.Printf("write Command\n")
 						writeFile(commandArray,buf,&bufCurrPos,&numberofbytes,conn)
 					case commandType==2:
-						//fmt.Printf("read Command")
 						readFile(commandArray,conn)
 					case commandType==3:
-						//fmt.Printf("cas Command")
 						casFile(commandArray,buf,&bufCurrPos,&numberofbytes, conn)
 					case commandType == 4:
-						//fmt.Printf("delete Command");
 						deleteFile(commandArray,conn)
 					default:
 						conn.Write([]byte("ERR_CMD_ERR\r\n"))
@@ -105,8 +103,6 @@ func handleClient(conn net.Conn) {
 		if commandbufCurrPos == BUFFER_SIZE {
 			commandbufCurrPos = 0
 		}
-		//fmt.Printf("%c\n",currByte)
-		//fmt.Printf("%d\n",commandbufCurrPos)
 		commandbuf[commandbufCurrPos] = currByte
 		commandbufCurrPos++
 		commandLen++
@@ -162,7 +158,6 @@ func parseCommand(command string) (int64,[]string) {
 // This function is executed when client enter the write command
 func writeFile(commandArray []string,buf []byte,bufCurrPos *int,numberofbytes *int,conn net.Conn) {
 	
-	fmt.Printf("I am in write\n")
 	var isExpiry bool = false
 	var expiry int64
 	var currVersion int64
@@ -190,6 +185,7 @@ func writeFile(commandArray []string,buf []byte,bufCurrPos *int,numberofbytes *i
 					f.expiry = expiry
 				}
 				f.content = newFileBuffer
+				f.veriosn = f.version+1
 				currVersion = f.version
 			} else {
 				var f *FileInfo
