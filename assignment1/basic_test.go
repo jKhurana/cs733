@@ -82,11 +82,13 @@ func CreateConnections(t *testing.T,count int) ([]net.Conn) {
 
 // ---------------------------------------------------------------Start Test Cases--------------------------------------------------
 
-
+ func TestMain(m *testing.M) {
+       go serverMain()   // launch the server as a goroutine.
+       time.Sleep(1 * time.Second) 
+ }
 
 // Simple serial check of read and write
 func TestTCPSimple(t *testing.T) {
-        go serverMain()
         name := "hi.txt"
         contents := "bye"
         exptime := 300000
@@ -352,7 +354,7 @@ func PerformMultiCas(t *testing.T,version int64,name string,conn net.Conn,dataCh
 			}
 		}
 }
-/*
+
 
 func TestMultiClientCasFinalVersion(t *testing.T) {
 
@@ -381,7 +383,7 @@ func TestMultiClientCasFinalVersion(t *testing.T) {
 	}
 
 	arr := make([]int64,10)
-	for i:=0;i<10;i++ {
+	for i:=0;i<5;i++ {
 		arr[i] = <-dataChannel
 	}
 	fmt.Printf("3")
@@ -411,7 +413,7 @@ func TestMultiClientCasFinalVersion(t *testing.T) {
     }
 
 }
-*/
+
 
 func writeFileTest(t *testing.T,conn net.Conn,dataChannel chan int64,name string) {
     contents := "hello 1"
