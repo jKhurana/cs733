@@ -32,6 +32,7 @@ var FileInfoMap map[string]*FileInfo
 func serverMain() {
 
 	FileInfoMap = make(map[string]*FileInfo)
+	go clearBuffer()
 	ln, err := net.Listen("tcp",":8080")
 	checkError(err) // check for error
 	for {
@@ -351,19 +352,19 @@ func casFile(commandArray []string,buf []byte,bufCurrPos *int,numberofbytes *int
 		return nil
 	}
 
-	// If version mismatch
-	if f.version != newVersion {
-		FileStructureLock.Unlock()
-		conn.Write([]byte("ERR_VERSION "+ strconv.FormatInt(f.version,10) +"\r\n"))
-		return nil
-	}
-
 	// check whether file is expired or not
 	result,_ := isFileExpired(f.isExpiry,f.updateTime,f.expiry)
 	if result {
 			FileStructureLock.Unlock()
 			conn.Write([]byte("ERR_FILE_NOT_FOUND\r\n"))
 			return nil
+	}
+
+	// If version mismatch
+	if f.version != newVersion {
+		FileStructureLock.Unlock()
+		conn.Write([]byte("ERR_VERSION "+ strconv.FormatInt(f.version,10) +"\r\n"))
+		return nil
 	}
 
 	newFileBuffer := make([]byte,newfileSize,newfileSize) // make buffer for new file
@@ -422,15 +423,18 @@ func isFileExpired(isExpiry bool,t time.Time,expiry int64) (bool,int64) {
 
 // This method is like GC which runs after every 5 min and removes all the expired file from the map
 func clearBuffer() {
-	FileStructureLock.Lock()
-
-	for key,value := range FileInfoMap {
-		isExpired,_ := isFileExpired(value.isExpiry,value.updateTime,value.expiry)
-		if isExpired {
-			delete(FileInfoMap, key)
+	
+	for {
+		time.Sleep(300*time.Second)
+		FileStructureLock.Lock()
+		for key,value := range FileInfoMap {
+			isExpired,_ := isFileExpired(value.isExpiry,value.updateTime,value.expiry)
+			if isExpired {
+				delete(FileInfoMap, key)
+			}
 		}
+		FileStructureLock.Unlock()
 	}
-	FileStructureLock.Unlock()
 }
 
 // This method handles the error and terminate the server process
