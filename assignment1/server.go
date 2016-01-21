@@ -225,7 +225,7 @@ func writeFile(commandArray []string,buf []byte,bufCurrPos *int,numberofbytes *i
 		if ok {
 				f.numberofbytes = fileSize
 				f.updateTime = time.Now()
-				if isExpiry {
+				if isExpiry && expiry != int64(0) {
 					f.expiry = expiry
 					f.isExpiry = true
 				} else {
@@ -239,7 +239,7 @@ func writeFile(commandArray []string,buf []byte,bufCurrPos *int,numberofbytes *i
 				f = new(FileInfo)
 				f.numberofbytes = fileSize
 				f.updateTime = time.Now()
-				if isExpiry {
+				if isExpiry && expiry != int64(0) {
 					f.expiry = expiry
 					f.isExpiry = isExpiry
 				} else {
@@ -284,7 +284,7 @@ func readFile(commandArray []string,conn net.Conn) {
 	if(f.isExpiry) {
 			conn.Write([]byte(" "+strconv.FormatInt(remExpiry,10)+"\r\n"))
 	} else {
-			conn.Write([]byte("\r\n"))
+			conn.Write([]byte(" 0\r\n"))
 	}
 
 	FileStructureLock.RUnlock()
@@ -390,7 +390,7 @@ func casFile(commandArray []string,buf []byte,bufCurrPos *int,numberofbytes *int
 	// if everything is correct update the content and vesion number
 	if preByte == '\r' && currByte == '\n' {
 		f.numberofbytes = newfileSize
-		if newisExpiry {
+		if newisExpiry && newexpiry != int64(0) {
 			f.expiry = newexpiry
 			f.isExpiry = true
 		} else {
