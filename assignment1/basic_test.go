@@ -82,6 +82,8 @@ func CreateConnections(t *testing.T,count int) ([]net.Conn) {
 
 // ---------------------------------------------------------------Start Test Cases--------------------------------------------------
 
+
+
 // Simple serial check of read and write
 func TestTCPSimple(t *testing.T) {
         go serverMain()
@@ -326,15 +328,147 @@ func TestMultiClientCasSingleUpdate(t *testing.T) {
     }
 }
 
+func PerformMultiCas(t *testing.T,version int64,name string,conn net.Conn,dataChannel chan int64) {
 
+	var err error
+	contents := "hello"
+	for {
+			fmt.Fprintf(conn, "cas %v %v %v\r\n%v\r\n",name,version,len(contents),contents)
+			scanner := bufio.NewScanner(conn)
+
+			scanner.Scan()
+			output := scanner.Text()
+			arr := strings.Split(output," ")
+			version,err = strconv.ParseInt(arr[1],10,64)
+			if err != nil {
+				t.Error(err.Error())
+			}
+
+			if arr[0] == "ERR_VERSION" {
+					continue
+			} else {
+					dataChannel <- version
+					break
+			}
+		}
+}
+/*
 
 func TestMultiClientCasFinalVersion(t *testing.T) {
 
+	var err error
+	conn := CreateConnections(t,5)
+	dataChannel := make(chan int64)
+	fmt.Printf("1")
+
+	name := "hi.txt"
+    contents := "hello 1"
+    scanner := bufio.NewScanner(conn[0])
+    fmt.Printf("haha")
+
+	_,err = fmt.Fprintf(conn[0], "write %v %v\r\n%v\r\n", name, len(contents) ,contents)
+	fmt.Printf("jaja")
+	if err != nil {
+		t.Error(err.Error())
+	}
+
+	fmt.Printf("2")
+	scanner.Scan()
+	version := VerifyWriteSucess(t,scanner.Text())
+
+	for i:=0;i<5;i++ {
+		go PerformMultiCas(t,version,name,conn[i],dataChannel)
+	}
+
+	arr := make([]int64,10)
+	for i:=0;i<10;i++ {
+		arr[i] = <-dataChannel
+	}
+	fmt.Printf("3")
+	// read from the second client
+    fmt.Fprintf(conn[1], "read %v\r\n", name)
+    scanner = bufio.NewScanner(conn[1])
+    scanner.Scan()
+    output := scanner.Text()
+    arr1 := strings.Split(output," ")
+    scanner.Scan()
+    version,err = strconv.ParseInt(arr1[1],10,64)
+    if err != nil {
+    	t.Error(err.Error())
+    }
+    fmt.Printf("4")
+    var result bool = false
+
+    for i:=0;i<10;i++ {
+    	if version == arr[i] {
+    		result = true
+    		break
+    	}
+    }
+
+   	if !result {
+    	t.Error("Version error while writing multiple clients")
+    }
+
 }
+*/
+
+func writeFileTest(t *testing.T,conn net.Conn,dataChannel chan int64,name string) {
+    contents := "hello 1"
+    scanner := bufio.NewScanner(conn)
+	_,err := fmt.Fprintf(conn, "write %v %v\r\n%v\r\n", name, len(contents) ,contents)
+	if err !=nil {
+		t.Error(err.Error())
+	}
+	scanner.Scan()
+	version := VerifyWriteSucess(t,scanner.Text())
+
+	dataChannel <- version
+
+}
+
 
 func TestWritewithSameFileName(t *testing.T) {
+	name := "hi.txt"
+	dataChannel := make(chan int64)
+	conn := CreateConnections(t,10)
+
+	for i:=0; i<10;i++ {
+		go writeFileTest(t,conn[i],dataChannel,name)
+	}
+
+	arr := make([]int64,10)
+	for i:=0;i<10;i++ {
+		arr[i] = <-dataChannel
+	}
+	
+	// read from the second client
+    fmt.Fprintf(conn[1], "read %v\r\n", name)
+    scanner := bufio.NewScanner(conn[1])
+    scanner.Scan()
+    output := scanner.Text()
+    arr1 := strings.Split(output," ")
+    scanner.Scan()
+    version,err := strconv.ParseInt(arr1[1],10,64)
+    if err != nil {
+    	t.Error(err.Error())
+    }
+    
+    var result bool = false
+
+    for i:=0;i<10;i++ {
+    	if version == arr[i] {
+    		result = true
+    		break
+    	}
+    }
+    
+    if !result {
+    	t.Error("Version error while writing multiple clients")
+    }
 
 }
+
 
 
 // Useful testing function

@@ -227,6 +227,9 @@ func writeFile(commandArray []string,buf []byte,bufCurrPos *int,numberofbytes *i
 				f.updateTime = time.Now()
 				if isExpiry {
 					f.expiry = expiry
+					f.isExpiry = true
+				} else {
+					f.isExpiry = false
 				}
 				f.content = newFileBuffer
 				f.version = f.version+1
@@ -239,6 +242,8 @@ func writeFile(commandArray []string,buf []byte,bufCurrPos *int,numberofbytes *i
 				if isExpiry {
 					f.expiry = expiry
 					f.isExpiry = isExpiry
+				} else {
+					f.isExpiry = false
 				}
 				f.content = newFileBuffer
 				f.version = 1
@@ -388,6 +393,8 @@ func casFile(commandArray []string,buf []byte,bufCurrPos *int,numberofbytes *int
 		if newisExpiry {
 			f.expiry = newexpiry
 			f.isExpiry = true
+		} else {
+			f.isExpiry = false
 		}
 		f.updateTime = time.Now()
 		f.content = newFileBuffer
