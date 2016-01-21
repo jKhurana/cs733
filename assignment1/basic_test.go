@@ -219,6 +219,61 @@ func TestExpireTime(t *testing.T) {
 
 // Test read , write , cas and delete with multiple clients
 func TestMultipleClient(t *testing.T) {
+	
+	conn := CreateConnections(t,4)
+	name := "hi.txt"
+    contents := "bye"
+    exptime := 300000
+    
+    var err error
+    // get scanner 
+    fmt.Println("I am here")
+    scanner := make([]*bufio.Scanner, 4)
+    for i:=0;i<4;i++ {
+    	scanner[i] = bufio.NewScanner(conn[i])
+    }
+
+    fmt.Printf("ooohhhhhhh")
+    // Write a file
+    _,err = fmt.Fprintf(conn[0], "write %v %v %v\r\n%v\r\n", name, len(contents), exptime ,contents)
+    if err !=nil {
+            fmt.Printf("error in writing in buffer\n")
+    }
+    scanner[0].Scan() // read first line
+    resp := scanner[0].Text() // extract the text from the buffer
+    version := VerifyWriteSucess(t,resp)
+
+    fmt.Printf("2")
+
+    // read from the second client
+    fmt.Fprintf(conn[1], "read %v\r\n", name)
+    scanner[1].Scan()
+    output := scanner[1].Text()
+    scanner[1].Scan()     
+    VerifyReadSucess(t,output,version,contents,scanner[1].Text())
+
+    fmt.Printf("3")
+
+    // cas from the third client
+    contents = "GO is for distributed computing"
+    fmt.Fprintf(conn[2], "cas %v %v %v %v\r\n%v\r\n",name,version,len(contents),exptime,contents)
+    scanner[2].Scan() // read first line
+    version = VerifyCasSucess(t,scanner[2].Text())
+
+    fmt.Printf("4")
+
+    // delete file from third client
+    fmt.Fprintf(conn[3],"delete %v\r\n",name)
+    scanner[3].Scan()
+    VerifyDeleteSucess(t,scanner[3].Text())
+
+    fmt.Printf("4")
+
+    // delete file from third client
+    fmt.Fprintf(conn[1],"delete %v\r\n",name)
+    scanner[1].Scan()
+    VerifyFileNotFound(t,scanner[1].Text())
+
 
 }
 
@@ -241,7 +296,8 @@ func PerformCas(version int64,name string,conn net.Conn,dataChannel chan int) {
 	}
 }
 
-func TestCas(t *testing.T) {
+// If more than one client change the same version , only one of them should succeed
+func TestMultiClientCasSingleUpdate(t *testing.T) {
 
 	dataChannel := make(chan int)
 
@@ -270,6 +326,15 @@ func TestCas(t *testing.T) {
     }
 }
 
+
+
+func TestMultiClientCasFinalVersion(t *testing.T) {
+
+}
+
+func TestWritewithSameFileName(t *testing.T) {
+
+}
 
 
 // Useful testing function

@@ -44,6 +44,7 @@ Now connect the client and perform the above operation
 ------------------------------------------Specification and Assumption---------------------------------------
 1- Server run on port 8080.
 2- Server stoers the file in memory only so when we close the server all data are lost.
+3. Maximum number of bytes in a file should be 1000000000
 
 
 

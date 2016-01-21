@@ -9,6 +9,7 @@ import (
 "strings"
 "strconv"
 "time"
+"io"
 )
 
 // Data Structure for keeping file information
@@ -50,28 +51,37 @@ func main() {
 	serverMain() // server Main function
 }
 
+// This function handle each client
 func handleClient(conn net.Conn) {
+
+	fmt.Println("Client Connected from", conn.RemoteAddr())
 	
 	// constant declaration
 	const BUFFER_SIZE = 1024 // default buffer size
 	const MAX_COMMAND_LENGTH = 400
 	const MIN_COMMAND_LENGTH = 5
 
-	defer conn.Close() // once method is executed close the connection
-
-	fmt.Println("Client Connected from", conn.RemoteAddr())
-
-	buf := make([]byte, BUFFER_SIZE)
-	commandbuf := make([]byte, BUFFER_SIZE)
-
+		// vairable declarations
 	var bufCurrPos int = 0
 	var numberofbytes int = 0
 	var commandbufCurrPos int = 0
 	var commandLen int64 = 0
 	var preByte byte = 'd'
+	var currByte byte
+	var err error = nil
+
+	defer conn.Close() // once method is executed close the connection
+
+	// initialize the buffer to read the command
+	buf := make([]byte, BUFFER_SIZE)
+	commandbuf := make([]byte, BUFFER_SIZE)
 
 	for {
-		currByte := readByte(conn,buf,&numberofbytes,&bufCurrPos)
+		currByte,err = readByte(conn,buf,&numberofbytes,&bufCurrPos)
+		if err != nil {
+			conn.Close()
+			break
+		}
 		if preByte == '\r' && currByte == '\n' {
 			if commandLen < MIN_COMMAND_LENGTH || commandLen > MAX_COMMAND_LENGTH {
 				conn.Write([]byte("ERR_CMD_ERR\r\n"))
@@ -85,16 +95,26 @@ func handleClient(conn net.Conn) {
 
 			switch {
 					case commandType==1:
-						writeFile(commandArray,buf,&bufCurrPos,&numberofbytes,conn)
+						err = writeFile(commandArray,buf,&bufCurrPos,&numberofbytes,conn)
+						if err != nil {
+							break
+						}
 					case commandType==2:
 						readFile(commandArray,conn)
 					case commandType==3:
-						casFile(commandArray,buf,&bufCurrPos,&numberofbytes, conn)
+						err = casFile(commandArray,buf,&bufCurrPos,&numberofbytes, conn)
+						if err != nil {
+							break
+						}
 					case commandType == 4:
 						deleteFile(commandArray,conn)
 					default:
 						conn.Write([]byte("ERR_CMD_ERR\r\n"))
 					}
+			if err !=nil {
+				conn.Close()
+				break
+			}
 			commandbufCurrPos = 0
 			commandLen = 0
 			preByte = 'd'
@@ -111,11 +131,15 @@ func handleClient(conn net.Conn) {
 }
 
 // return a single byte after reading from buffer
-func readByte(conn net.Conn,buf []byte,numberofbytes *int,bufCurrPos *int) (byte){
+func readByte(conn net.Conn,buf []byte,numberofbytes *int,bufCurrPos *int) (byte,error){
+	var err error
 	if *bufCurrPos == *numberofbytes {
 		for {
 				*bufCurrPos = 0
-				*numberofbytes,_ = conn.Read(buf)
+				*numberofbytes,err = conn.Read(buf)
+				if err !=nil && err != io.EOF {
+					return 0,err
+				}
 				if *numberofbytes ==0 {
 				continue
 			} else {
@@ -125,8 +149,10 @@ func readByte(conn net.Conn,buf []byte,numberofbytes *int,bufCurrPos *int) (byte
 	}
 	b := buf[*bufCurrPos]
 	*bufCurrPos++
-	return b
+	return b,nil
 }
+
+// This method parse the command and return an Integer based on the type of command
 /*
 0- wrong command
 1-write
@@ -156,25 +182,43 @@ func parseCommand(command string) (int64,[]string) {
 }
 
 // This function is executed when client enter the write command
-func writeFile(commandArray []string,buf []byte,bufCurrPos *int,numberofbytes *int,conn net.Conn) {
+func writeFile(commandArray []string,buf []byte,bufCurrPos *int,numberofbytes *int,conn net.Conn) (error){
 	
+	// variable declaration
+	var err error
 	var isExpiry bool = false
 	var expiry int64
 	var currVersion int64
+
 	fileName := commandArray[1]
-	fileSize,_ := strconv.ParseInt(commandArray[2],10,64)
+	fileSize,err := strconv.ParseInt(commandArray[2],10,64)
+	// if error return 
+	if err!=nil {
+		conn.Write([]byte("ERR_CMD_ERR\r\n"))
+		return nil
+	}
+
 	if len(commandArray) == 4 {
-		expiry,_ = strconv.ParseInt(commandArray[3],10,64)
+		expiry,err = strconv.ParseInt(commandArray[3],10,64)
+		// if error return 
+		if err != nil {
+			conn.Write([]byte("ERR_CMD_ERR\r\n"))
+			return nil
+		}
 		isExpiry = true
 	}
+
 	newFileBuffer := make([]byte,fileSize,fileSize)
-
 	for i := int64(0) ; i < fileSize ; i++ {
-		newFileBuffer[i] = readByte(conn,buf,numberofbytes,bufCurrPos)
+		newFileBuffer[i],err = readByte(conn,buf,numberofbytes,bufCurrPos)
+		if err!=nil {
+			return err
+		}
 	}
-	preByte := readByte(conn,buf,numberofbytes,bufCurrPos)
-	currByte := readByte(conn,buf,numberofbytes,bufCurrPos)
+	preByte,err := readByte(conn,buf,numberofbytes,bufCurrPos)
+	currByte,err := readByte(conn,buf,numberofbytes,bufCurrPos)
 
+	// if everything is correct, then write the file
 	if preByte == '\r' && currByte == '\n' {
 		FileStructureLock.Lock()
 		f,ok := FileInfoMap[fileName]
@@ -185,7 +229,7 @@ func writeFile(commandArray []string,buf []byte,bufCurrPos *int,numberofbytes *i
 					f.expiry = expiry
 				}
 				f.content = newFileBuffer
-				f.veriosn = f.version+1
+				f.version = f.version+1
 				currVersion = f.version
 			} else {
 				var f *FileInfo
@@ -206,7 +250,9 @@ func writeFile(commandArray []string,buf []byte,bufCurrPos *int,numberofbytes *i
 	} else {
 		conn.Write([]byte("ERR_CMD_ERR\r\n"))
 	}
+	return nil
 }
+
 
 // Thid function is execute when client enter the read file command
 func readFile(commandArray []string,conn net.Conn) {
@@ -227,6 +273,7 @@ func readFile(commandArray []string,conn net.Conn) {
 			conn.Write([]byte("ERR_FILE_NOT_FOUND\r\n"))
 			return
 	}
+
 	reader := f.content
 	conn.Write([]byte("CONTENTS "+strconv.FormatInt(f.version,10)+" "+strconv.FormatInt(f.numberofbytes,10)))
 	if(f.isExpiry) {
@@ -234,7 +281,9 @@ func readFile(commandArray []string,conn net.Conn) {
 	} else {
 			conn.Write([]byte("\r\n"))
 	}
+
 	FileStructureLock.RUnlock()
+
 	conn.Write(reader)
 	conn.Write([]byte("\r\n"))
 }
@@ -266,53 +315,75 @@ func deleteFile(commandArray []string,conn net.Conn) {
 }
 
 // This function is executed when client enter the cas command
-func casFile(commandArray []string,buf []byte,bufCurrPos *int,numberofbytes *int,conn net.Conn) {
-		
+func casFile(commandArray []string,buf []byte,bufCurrPos *int,numberofbytes *int,conn net.Conn) (error){
+	
+	// variable declaration
 	var newisExpiry bool = false // set
 	var newexpiry int64 // set
 	var newVersion int64 // set
 	var newfileSize int64 // set
+	var preByte byte
+	var currByte byte
+	var err error
 
 	fileName := commandArray[1]
 	newVersion,_ = strconv.ParseInt(commandArray[2],10,64)
 	newfileSize,_ = strconv.ParseInt(commandArray[3],10,64)
+
+	// expiry time exist, record it
 	if len(commandArray) == 5 {
 		newexpiry,_ = strconv.ParseInt(commandArray[4],10,64)
 		newisExpiry = true
 	}
 
-	FileStructureLock.Lock()
+	FileStructureLock.Lock() // take lock on file
 	f,status := FileInfoMap[fileName]
 
+	// if file does not exiist
 	if !status {
 		FileStructureLock.Unlock()
 		conn.Write([]byte("ERR_FILE_NOT_FOUND\r\n"))
-		return
+		return nil
 	}
 
+	// If version mismatch
 	if f.version != newVersion {
 		FileStructureLock.Unlock()
 		conn.Write([]byte("ERR_VERSION "+ strconv.FormatInt(f.version,10) +"\r\n"))
-		return
+		return nil
 	}
 
+	// check whether file is expired or not
 	result,_ := isFileExpired(f.isExpiry,f.updateTime,f.expiry)
 	if result {
 			FileStructureLock.Unlock()
 			conn.Write([]byte("ERR_FILE_NOT_FOUND\r\n"))
-			return
+			return nil
 	}
 
-	newFileBuffer := make([]byte,newfileSize,newfileSize)
-
+	newFileBuffer := make([]byte,newfileSize,newfileSize) // make buffer for new file
 	for i := int64(0) ; i < newfileSize ; i++ {
-		newFileBuffer[i] = readByte(conn,buf,numberofbytes,bufCurrPos)
+		newFileBuffer[i],err = readByte(conn,buf,numberofbytes,bufCurrPos)
+		if err != nil {
+			FileStructureLock.Unlock()
+			return err
+		}
 	}
-	preByte := readByte(conn,buf,numberofbytes,bufCurrPos)
-	currByte := readByte(conn,buf,numberofbytes,bufCurrPos)
 
+
+	preByte,err = readByte(conn,buf,numberofbytes,bufCurrPos)
+	if err != nil {
+		FileStructureLock.Unlock()
+		return err
+	}
+	currByte,err = readByte(conn,buf,numberofbytes,bufCurrPos)
+	if err != nil {
+		FileStructureLock.Unlock()
+		return err
+	}
+
+	// if everything is correct update the content and vesion number
 	if preByte == '\r' && currByte == '\n' {
-		f,_ := FileInfoMap[fileName]
 		f.numberofbytes = newfileSize
 		if newisExpiry {
 			f.expiry = newexpiry
@@ -322,13 +393,14 @@ func casFile(commandArray []string,buf []byte,bufCurrPos *int,numberofbytes *int
 		f.content = newFileBuffer
 		f.version = f.version+1
 		conn.Write([]byte("OK "+strconv.FormatInt(f.version,10)+" \r\n"))		
-		FileStructureLock.Unlock()
 	} else {
-		FileStructureLock.Unlock()
 		conn.Write([]byte("ERR_CMD_ERR\r\n"))
 	}
+	FileStructureLock.Unlock()
+	return nil
 }
 
+// this method returns true if file is expired , otherwise false
 func isFileExpired(isExpiry bool,t time.Time,expiry int64) (bool,int64) {
 	if !isExpiry {
 		return false,0
@@ -341,6 +413,7 @@ func isFileExpired(isExpiry bool,t time.Time,expiry int64) (bool,int64) {
 	}
 }
 
+// This method is like GC which runs after every 5 min and removes all the expired file from the map
 func clearBuffer() {
 	FileStructureLock.Lock()
 
