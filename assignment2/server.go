@@ -4,6 +4,9 @@ import (
 "fmt"
 "sync"
 "io"
+"math/rand"
+"time"
+"bytes"
 )
 
 // Constant represents the differenet state of the leader
@@ -21,7 +24,7 @@ MaximumElectionTimeout = 2 * MinimumElectionTimeout
 
 )
 
-// protected variables to maintain the consistency
+// ---------------------------------protected variables to maintain the consistency-------------------------------------
 
 // Protected Int variable
 type protectedInt struct {
@@ -58,19 +61,37 @@ func (i *protectedInt) getBool() bool {
 	return b.value
 }
 
+//------------------------------------------------------------------END-------------------------------------------------------------
+
+//----------------------------------METHOD for timeout----------------------------------------
+
+// electionTimeout returns a variable time.Duration, between the minimum and
+// maximum election timeouts.
+func electionTimeout() time.Duration {
+	n := rand.Intn(int(MaximumElectionTimeout - MinimumElectionTimeout))
+	d := int(MinimumElectionTimeout) + n
+	return time.Duration(d) * time.Millisecond
+}
+
+
 // data structure for the indivisual server
 type Server struct {
 
 	serverId uint64 // unique server id of the server
 	state *protectedInt // current state of the server
 	runningStatus *protectedBool // whether server is running or not
+	leader uint64 // keep the id of the leader
 	term uint64 // current term number of the server
 	vote uint64 // if applicable id of the server to whom server voted for the curreent term 
 	log *Log // log of the server
 	
 	appendEntriesChannel chan appendEntriesReqRes // this require for sending the request for appendEntries or receiving its response
 	voteChannel chan voteReqRes // require for sending vote request and receiving its response
+
+	electionTimeOut chan time.Time // used when election are running and timeout happend
 }
+
+
 
 
 // this method create a new server with the given id and readWriter. This method assumes that given 
@@ -87,12 +108,15 @@ func createNewServer(id uint64, rw io.ReadWriter) *Server {
 		serverId:	id,
 		state:	&protectedInt{value: follower},
 		runningStatus:	&protectedBool{value: false},
+		leader:	0, // means no leader
 		term:	latestTerm,
 		vote:	-1,
 		log:	log,
-		appendEntriesChannel:	make(chan appendEntriesReqRes)
-		voteChannel:	make(chan voteReqRes)
+		appendEntriesChannel:	make(chan appendEntriesReqRes),
+		voteChannel:	make(chan voteReqRes),
 	}
+
+	return s
 }
 
 // This method run the server continusously until runningStatus is true
@@ -118,28 +142,40 @@ func (s *Server) run() {
 
 // This method handle the follower state
 func (s *Server) handleFolloweState() {
-
+	fmt.Printf("I am in follower state")
+	s.state.setInt(candidate)
 }
 
 // this method handle the leader state
 func (s *Server) handleLeaderState() {
-
+	fmt.Printf("I am in leader state")
+	s.runningStatus.setBool(false)
 }
 
 // this method handle the candidate state
 func (s *Server) handleCandidateState() {
-
+	fmt.Printf("I am in candidate state")
+	s.state.set(leader)
 }
 
 //-------------------------------------------------------------------------------------END-----------------------------------------------------------------
 
+// ---------------------------------------------------- Server start and stop methods------------------------------------
+
 // this function start the server
 func (s *Server) start() {
-	go s.run();
+	go s.run()
 }
 
 // this function stop the server
 func (s *Server) stop() {
 	s.runningStatus.set(false)
 }
+
+func main() {
+	s := createNewServer(1,bytes.Buffer{})
+	s.start()
+}
+
+//-------------------------------------------------END---------------------------------------------------------------------------------------
 

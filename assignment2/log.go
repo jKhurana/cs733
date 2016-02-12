@@ -3,6 +3,8 @@ package main
 import (
 "io"
 "encoding/binary"
+"sync"
+"errors"
 )
 
 // various constants
@@ -11,7 +13,7 @@ logEntryHeaderSize = 24 // Size of the header of the log entry (must be changed 
 )
 
 //log structure of a server node
-type Log struct {
+type serverLog struct {
 	sync.RWMutex
 	logRecord []logEntry
 	commitPosition int64
@@ -28,31 +30,31 @@ type Log struct {
  Note: while adding more entry to the log , don't change the position of the entries(always append at last)
 */
 type logEntry struct {
-	term int64
-	index int64
+	term uint64
+	index uint64
 	command []byte
 }
 
 //---------------------------------------------Some general methods---------------------------------------------------------
 
 
-func (log *Log) lastIndex() uint64 {
-	log.RLock()
-	defer log.RUnLock()
-	if len(log.logRecord) <=0 {
+func (l *serverLog) lastIndex() uint64 {
+	l.RLock()
+	defer l.RUnlock()
+	if len(l.logRecord) <=0 {
 		return 0
 	}
-	lastLogEntry := log.logRecord[len(log.logRecord)-1]
+	lastLogEntry := l.logRecord[len(l.logRecord)-1]
 	return lastLogEntry.index
 }
 
-func (log *Log) lastTerm() uint64 {
-	log.RLock()
-	defer log.RUnLock()
-	if len(log.logRecord) <=0 {
+func (l *serverLog) lastTerm() uint64 {
+	l.RLock()
+	defer l.RUnlock()
+	if len(l.logRecord) <=0 {
 		return 0
 	}
-	lastLogEntry := log.logRecord[len(log.logRecord)-1]
+	lastLogEntry := l.logRecord[len(l.logRecord)-1]
 	return lastLogEntry.term
 }
 
@@ -60,13 +62,13 @@ func (log *Log) lastTerm() uint64 {
 
 // thos method create the new log and return its address
 // this method is called when a new node is up inititally
-func createNewLog(logReadWrite io.ReadWriter) *Log {
-	log := &Log{
-		logRecord:	[]logEntry{}
-		commitPosition:	-1 // no commit entry in the starting position
-		logReadWrite:	logReadWrite
+func createNewLog(logReadWrite io.ReadWriter) *serverLog {
+	l := &serverLog{
+		logRecord:	[]logEntry{},
+		commitPosition:	-1, // no commit entry in the starting position
+		logReadWrite:	logReadWrite,
 	}
-	return log
+	return l
 }
 
 /*
@@ -74,21 +76,21 @@ This method append the log entry into the log of the server
 Because term and Index monotonically increasing in the log of a server So this method throws an error when 
 lastTerm or lastIndex of log is greater than the term and Index of given log entry respectively
 */
-func (log *Log) appendlogEntry(entry logEntry) error {
+func (l *serverLog) appendlogEntry(entry logEntry) error {
 	
-	log.Lock()
-	defer log.UnLock()
+	l.Lock()
+	defer l.Unlock()
 
-	lastLogIndex := log.lastIndex()
+	lastLogIndex := l.lastIndex()
 	if lastLogIndex > entry.index {
-		return error.New("Index valud is too small")
+		return errors.New("Index valud is too small")
 	}
-	lastLogTerm := log.lastTerm()
+	lastLogTerm := l.lastTerm()
 	if lastLogTerm > entry.term {
-		return error.New("Term valud is too small")
+		return errors.New("Term valud is too small")
 	}
 
-	log.logRecord = append(log.logRecord,entry)
+	l.logRecord = append(l.logRecord,entry)
 	return nil
 }
 
@@ -97,27 +99,27 @@ func (le *logEntry) readLogEntry(reader io.Reader) error{
 
 	buf := make([]byte,logEntryHeaderSize)
 	
-	_ err := reader.Read(buf)
+	_,err := reader.Read(buf)
 	if err != nil {
 		return err
 	}
 
 	command := make([]byte,binary.LittleEndian.Uint64(buf[16:24]))
-	_ err = reader.Read(command)
+	_,err = reader.Read(command)
 	if err != nil {
 		return err
 	}
 
-	e.term = binary.LittleEndian.Uint64(buf[0:8])
-	e.index = binary.LittleEndian.Uint64(buf[8:16])
-	e..command = command
-
+	le.term = binary.LittleEndian.Uint64(buf[0:8])
+	le.index = binary.LittleEndian.Uint64(buf[8:16])
+	le.command = command
+	return nil
 }
 
 // this mehtod write the log entry into the disk
 func (le *logEntry) writeLogEntry(w io.Writer) error {
 
-	commandLen := len(le.command)
+	commandLen := uint64(len(le.command))
 	buf := make([]byte,logEntryHeaderSize+commandLen) // buffer to write the log into persistent storage
 
 	// Put the data into the buffer
