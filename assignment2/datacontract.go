@@ -6,15 +6,18 @@ The name "DataContract" has been taken from the WCF datacontract concept.
 package main
 
 type requestAppendEntriesDC struct {
+	term uint64 
 	prevLogTerm uint64
 	prevLogIndex uint64
 	leaderId uint64
 	logRecords []logEntry
+	commitIndex uint64
 }
 
 type responseAppendEntriesDC struct {
 	term uint64
 	success bool
+	reason string
 }
 
 type appendEntriesReqRes struct {
